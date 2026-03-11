@@ -1,6 +1,12 @@
 "use client";
 
-import { startTransition, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  startTransition,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { TopologyRing } from "@/components/topology-ring";
 
 type QaEntry = {
@@ -42,7 +48,9 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 declare global {
   interface Window {
+    AudioContext?: typeof AudioContext;
     SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitAudioContext?: typeof AudioContext;
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
   }
 }
@@ -126,6 +134,7 @@ function delay(ms: number) {
 export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
   const [phase, setPhase] = useState<"idle" | "booting" | "ready">("idle");
   const [isCollapsing, setIsCollapsing] = useState(false);
+  const [isHelloPlaying, setIsHelloPlaying] = useState(false);
   const [bootProgress, setBootProgress] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     createMessage("system", "System initialized."),
@@ -138,6 +147,11 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const voiceFrameRef = useRef<number | null>(null);
+  const voiceLevelRef = useRef(0);
   const shouldResumeRecognitionRef = useRef(false);
   const queuedResponsesRef = useRef(Promise.resolve());
   const hasShownSpeechFallbackRef = useRef(false);
@@ -168,6 +182,82 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     }
   };
 
+  const stopVoiceTracking = () => {
+    if (voiceFrameRef.current !== null) {
+      window.cancelAnimationFrame(voiceFrameRef.current);
+      voiceFrameRef.current = null;
+    }
+
+    if (mediaSourceRef.current) {
+      mediaSourceRef.current.disconnect();
+      mediaSourceRef.current = null;
+    }
+
+    voiceLevelRef.current = 0;
+  };
+
+  const startVoiceTracking = async (audio: HTMLAudioElement) => {
+    const AudioContextCtor =
+      window.AudioContext ??
+      ("webkitAudioContext" in window
+        ? (window.webkitAudioContext as typeof AudioContext | undefined)
+        : undefined);
+
+    if (!AudioContextCtor) {
+      voiceLevelRef.current = 0;
+      return;
+    }
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextCtor();
+    }
+
+    const context = audioContextRef.current;
+
+    if (context.state === "suspended") {
+      await context.resume();
+    }
+
+    if (!analyserRef.current) {
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.82;
+      analyser.connect(context.destination);
+      analyserRef.current = analyser;
+    }
+
+    stopVoiceTracking();
+
+    const analyser = analyserRef.current;
+
+    if (!analyser) {
+      return;
+    }
+
+    const source = context.createMediaElementSource(audio);
+    source.connect(analyser);
+    mediaSourceRef.current = source;
+
+    const samples = new Uint8Array(analyser.frequencyBinCount);
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(samples);
+
+      let total = 0;
+
+      for (const sample of samples) {
+        const normalized = (sample - 128) / 128;
+        total += normalized * normalized;
+      }
+
+      const rms = Math.sqrt(total / samples.length);
+      voiceLevelRef.current = voiceLevelRef.current * 0.7 + rms * 0.3;
+      voiceFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    tick();
+  };
+
   const playAudio = async (
     src: string,
     options?: {
@@ -188,6 +278,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     audio.preload = "auto";
     audioRef.current = audio;
     setIsSpeaking(true);
+    await startVoiceTracking(audio);
 
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -210,6 +301,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
         settled = true;
         audio.removeEventListener("loadedmetadata", updateProgress);
         audio.removeEventListener("timeupdate", updateProgress);
+        stopVoiceTracking();
         options?.onProgress?.(1);
         setIsSpeaking(false);
         resumeRecognition();
@@ -315,6 +407,8 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
         audioRef.current.pause();
         audioRef.current = null;
       }
+
+      stopVoiceTracking();
     };
   }, []);
 
@@ -342,6 +436,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     setPhase("booting");
     setBootError(null);
     setBootProgress(0);
+    setIsHelloPlaying(true);
 
     try {
       await playAudio("/audio/hello.ogg", {
@@ -353,6 +448,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
       setBootError("Audio playback was blocked, but Samantha is still available.");
     }
 
+    setIsHelloPlaying(false);
     setIsCollapsing(true);
     await delay(BOOT_DURATION_MS);
     setPhase("ready");
@@ -372,20 +468,21 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     } catch {}
   };
 
-  const visibleMessages = messages.slice(-3);
   const mode = isSpeaking ? "speaking" : isListening ? "listening" : "idle";
-  const hasConversationStarted =
-    phase === "ready" &&
-    (visibleMessages.some((message) => message.role !== "system") ||
-      isListening ||
-      isSpeaking ||
-      Boolean(inputValue.trim()));
+  const visibleMessages = messages.slice(-3);
 
   return (
     <main className={`immersive-shell immersive-shell--${phase}`}>
-      <TopologyRing active={isCollapsing} phase={phase} mode={mode} />
+      <TopologyRing
+        active={isCollapsing}
+        mode={mode}
+        voiceLevelRef={voiceLevelRef}
+      />
+      <div className="immersive-frame" aria-hidden="true" />
 
-      <section className={`boot-loader ${phase === "booting" ? "is-visible" : ""}`}>
+      <section
+        className={`boot-loader ${phase === "booting" && isHelloPlaying ? "is-visible" : ""}`}
+      >
         <div className="boot-loader__track" aria-hidden="true">
           <span
             className="boot-loader__fill"
@@ -394,7 +491,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
         </div>
       </section>
 
-      <section className={`brand-stack ${hasConversationStarted ? "is-hidden-for-dialogue" : ""}`}>
+      <section className={`brand-stack ${phase === "idle" ? "is-visible" : ""}`}>
         <p className="brand-stack__welcome">Welcome to Element Software&apos;s</p>
         <h1 className="brand-stack__title">
           OS<span>1</span>
@@ -432,12 +529,6 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
           );
         })}
       </section>
-
-      <div className={`signal-orbs signal-orbs--${mode}`}>
-        <span />
-        <span />
-        <span />
-      </div>
 
       <form
         className={`floating-composer ${phase === "ready" ? "is-live" : ""}`}

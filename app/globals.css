@@ -43,6 +43,57 @@ input {
   inset: 0;
   background: radial-gradient(circle at center, rgba(255, 255, 255, 0.04) 0, transparent 42%);
   pointer-events: none;
+  animation: shellGlow 10s ease-in-out infinite alternate;
+}
+
+.immersive-shell::after {
+  content: "";
+  position: absolute;
+  inset: 1.25rem;
+  border-radius: 2rem;
+  border: 1px solid rgba(255, 232, 209, 0.06);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 232, 209, 0.03),
+    0 0 0 1px rgba(255, 232, 209, 0.02);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.immersive-frame {
+  position: absolute;
+  inset: 1.25rem;
+  border-radius: 2rem;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.immersive-frame::before,
+.immersive-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.immersive-frame::before {
+  border: 1px solid rgba(255, 232, 209, 0.12);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  padding: 0.7rem;
+  opacity: 0.28;
+}
+
+.immersive-frame::after {
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(255, 248, 240, 0.16) 50%, transparent 100%),
+    linear-gradient(180deg, transparent 0%, rgba(255, 240, 228, 0.1) 50%, transparent 100%);
+  mix-blend-mode: screen;
+  opacity: 0.38;
+  transform: translate3d(-18%, -18%, 0);
+  animation: frameSweep 11s linear infinite;
 }
 
 .topology-ring {
@@ -51,28 +102,38 @@ input {
   filter:
     drop-shadow(0 0 10px rgba(255, 232, 209, 0.82))
     drop-shadow(0 0 34px rgba(255, 232, 209, 0.28));
+  opacity: 1;
+  transition: opacity 360ms ease;
 }
 
 .topology-ring canvas {
   display: block;
   width: 100%;
   height: 100%;
+  animation: ringCanvasReveal 900ms ease;
+}
+
+.immersive-shell--idle .topology-ring {
+  opacity: 0;
 }
 
 .boot-loader {
   position: absolute;
-  top: 56%;
+  top: 57%;
   left: 50%;
   width: 6rem;
   transform: translate(-50%, -50%);
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition:
+    opacity 300ms ease,
+    transform 300ms ease;
   z-index: 2;
   pointer-events: none;
 }
 
 .boot-loader.is-visible {
   opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .boot-loader__track {
@@ -80,6 +141,7 @@ input {
   background: rgba(255, 232, 209, 0.32);
   border-radius: 999px;
   overflow: hidden;
+  box-shadow: 0 0 18px rgba(255, 232, 209, 0.12);
 }
 
 .boot-loader__fill {
@@ -93,7 +155,7 @@ input {
 
 .brand-stack {
   position: absolute;
-  top: 63%;
+  top: 50%;
   left: 50%;
   display: grid;
   justify-items: center;
@@ -107,21 +169,12 @@ input {
   z-index: 2;
   pointer-events: none;
   opacity: 0;
+  animation: brandFloat 8s ease-in-out infinite;
 }
 
-.immersive-shell--booting .brand-stack,
-.immersive-shell--ready .brand-stack {
+.brand-stack.is-visible {
   opacity: 1;
   transform: translate(-50%, -50%) translateY(0);
-}
-
-.immersive-shell--booting .brand-stack {
-  transform: translate(-50%, -50%) translateY(0.35rem);
-}
-
-.brand-stack.is-hidden-for-dialogue {
-  opacity: 0;
-  transform: translate(-50%, -50%) translateY(-1.4rem) scale(0.96);
 }
 
 .brand-stack__subtitle,
@@ -132,19 +185,19 @@ input {
 }
 
 .brand-stack__welcome {
-  margin: 0 0 0.2rem;
+  margin: 0 0 0.45rem;
   color: var(--text-main);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 400;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: none;
 }
 
 .brand-stack__title {
-  margin: 0.35rem 0 0;
-  font-size: clamp(4.2rem, 13vw, 6.6rem);
+  margin: 0;
+  font-size: clamp(5.2rem, 18vw, 8rem);
   font-weight: 300;
-  line-height: 0.88;
+  line-height: 0.9;
   letter-spacing: -0.08em;
 }
 
@@ -156,9 +209,9 @@ input {
 }
 
 .brand-stack__subtitle {
-  margin: 0.35rem 0 0;
+  margin: 0.6rem 0 0;
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: 0.82rem;
 }
 
 .brand-stack__error {
@@ -172,20 +225,26 @@ input {
   position: absolute;
   inset: 0;
   opacity: 0;
-  transition: opacity 700ms ease;
+  transition:
+    opacity 700ms ease,
+    transform 700ms ease;
   pointer-events: none;
   z-index: 2;
+  transform: translateY(0.5rem);
 }
 
 .dialogue-space.is-live {
   opacity: 1;
+  transform: translateY(0);
 }
 
 .dialogue-fragment {
   position: absolute;
   left: 50%;
-  width: min(28rem, calc(100vw - 4rem));
-  padding: 0.9rem 1.1rem;
+  bottom: calc(9.4rem + (var(--depth) - 1) * 5rem);
+  --bubble-shift: 0rem;
+  width: min(24rem, calc(100vw - 1.5rem));
+  padding: 0.85rem 1rem;
   border-radius: 1.4rem;
   background: rgba(255, 232, 209, 0.14);
   backdrop-filter: blur(24px) saturate(120%);
@@ -195,21 +254,38 @@ input {
     inset 0 0 0 1px rgba(255, 246, 238, 0.18);
   opacity: calc(1 - (var(--depth) - 1) * 0.18);
   transform:
-    translateX(-50%)
-    translateY(calc(17rem + (var(--depth) - 1) * 4.8rem))
-    scale(calc(1 - (var(--depth) - 1) * 0.06));
+    translateX(calc(-50% + var(--bubble-shift)))
+    translateY(calc((var(--depth) - 1) * -0.15rem))
+    scale(calc(1 - (var(--depth) - 1) * 0.04));
+  transform-origin: center bottom;
+  animation: bubbleDrift 7s ease-in-out infinite;
 }
 
 .dialogue-fragment--samantha {
-  left: 50%;
+  --bubble-shift: -1.1rem;
+  background: rgba(255, 239, 227, 0.2);
+  box-shadow:
+    0 20px 42px rgba(92, 22, 13, 0.1),
+    inset 0 0 0 1px rgba(255, 246, 238, 0.24);
+  animation-delay: -1.6s;
 }
 
 .dialogue-fragment--user {
-  left: calc(50% + 6.5rem);
+  --bubble-shift: 1.15rem;
+  background: rgba(255, 208, 180, 0.12);
+  box-shadow:
+    0 16px 36px rgba(92, 22, 13, 0.08),
+    inset 0 0 0 1px rgba(255, 232, 209, 0.16);
+  animation-delay: -0.8s;
 }
 
 .dialogue-fragment--system {
-  left: calc(50% - 6rem);
+  --bubble-shift: -0.7rem;
+  background: rgba(255, 232, 209, 0.08);
+  box-shadow:
+    0 12px 28px rgba(92, 22, 13, 0.05),
+    inset 0 0 0 1px rgba(255, 232, 209, 0.1);
+  animation-delay: -2.4s;
 }
 
 .dialogue-fragment__role {
@@ -219,55 +295,24 @@ input {
   font-size: 0.62rem;
 }
 
+.dialogue-fragment--samantha .dialogue-fragment__role {
+  color: rgba(255, 248, 240, 0.76);
+}
+
+.dialogue-fragment--user .dialogue-fragment__role {
+  color: rgba(255, 228, 204, 0.64);
+}
+
+.dialogue-fragment--system .dialogue-fragment__role {
+  color: rgba(255, 232, 209, 0.48);
+}
+
 .dialogue-fragment p {
   margin: 0;
-  font-size: clamp(1rem, 2.5vw, 1.5rem);
+  font-size: clamp(1rem, 3vw, 1.35rem);
   line-height: 1.35;
   color: var(--text-main);
   text-wrap: balance;
-}
-
-.signal-orbs {
-  position: absolute;
-  left: 50%;
-  bottom: 9.5rem;
-  display: inline-flex;
-  gap: 0.7rem;
-  transform: translateX(-50%);
-  opacity: 0;
-  transition: opacity 500ms ease;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.immersive-shell--ready .signal-orbs {
-  opacity: 1;
-}
-
-.signal-orbs span {
-  width: 0.58rem;
-  height: 0.58rem;
-  border-radius: 50%;
-  background: rgba(255, 232, 209, 0.72);
-  box-shadow: 0 0 22px rgba(255, 232, 209, 0.24);
-  animation: orbFloat 2.2s ease-in-out infinite;
-}
-
-.signal-orbs span:nth-child(2) {
-  animation-delay: 180ms;
-}
-
-.signal-orbs span:nth-child(3) {
-  animation-delay: 360ms;
-}
-
-.signal-orbs--listening span {
-  animation-duration: 1.2s;
-}
-
-.signal-orbs--speaking span {
-  animation-duration: 0.72s;
-  background: rgba(255, 247, 236, 0.92);
 }
 
 .floating-composer {
@@ -281,18 +326,22 @@ input {
   width: min(100vw - 2rem, 34rem);
   transform: translateX(-50%);
   opacity: 0;
-  transition: opacity 700ms ease;
+  transition:
+    opacity 700ms ease,
+    transform 700ms ease;
   z-index: 3;
 }
 
 .floating-composer.is-live {
   opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .floating-composer__field {
   position: relative;
   display: flex;
   align-items: center;
+  padding-inline: 0.2rem;
 }
 
 .floating-composer__field::after {
@@ -305,6 +354,7 @@ input {
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(255, 232, 209, 0.96), rgba(255, 232, 209, 0.38));
   box-shadow: 0 0 18px rgba(255, 232, 209, 0.18);
+  animation: composerLine 4s ease-in-out infinite;
 }
 
 .floating-composer__input {
@@ -336,7 +386,8 @@ input {
   transition:
     transform 180ms ease,
     background 180ms ease,
-    opacity 180ms ease;
+    opacity 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .floating-composer__mic {
@@ -348,6 +399,12 @@ input {
 .floating-composer__mic.is-active {
   background: rgba(255, 244, 232, 0.18);
   box-shadow: 0 0 28px rgba(255, 232, 209, 0.2);
+}
+
+.floating-composer__mic:not(:disabled):hover,
+.floating-composer__send:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 10px 20px rgba(92, 22, 13, 0.12);
 }
 
 .floating-composer__mic svg {
@@ -392,46 +449,134 @@ input {
   transform: translateX(-50%);
   color: var(--accent-soft);
   font-size: 0.78rem;
+  animation: promptPulse 1.8s ease-in-out infinite;
 }
 
-@keyframes orbFloat {
-  0%,
-  100% {
-    transform: translateY(0) scale(0.92);
-    opacity: 0.72;
+@keyframes shellGlow {
+  from {
+    opacity: 0.35;
+    transform: scale(0.98);
   }
 
-  50% {
-    transform: translateY(-0.28rem) scale(1.14);
+  to {
+    opacity: 0.55;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes frameSweep {
+  from {
+    transform: translate3d(-18%, -18%, 0) rotate(0deg);
+  }
+
+  to {
+    transform: translate3d(18%, 18%, 0) rotate(360deg);
+  }
+}
+
+@keyframes ringCanvasReveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
     opacity: 1;
   }
 }
 
+@keyframes brandFloat {
+  0%,
+  100% {
+    margin-top: 0;
+  }
+
+  50% {
+    margin-top: -0.3rem;
+  }
+}
+
+@keyframes bubbleDrift {
+  0%,
+  100% {
+    margin-top: 0;
+  }
+
+  50% {
+    margin-top: -0.18rem;
+  }
+}
+
+@keyframes composerLine {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: scaleX(0.98);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1.02);
+  }
+}
+
+@keyframes promptPulse {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (min-width: 761px) {
+  .dialogue-fragment {
+    width: min(28rem, calc(100vw - 4rem));
+    padding: 0.95rem 1.15rem;
+    bottom: calc(10.1rem + (var(--depth) - 1) * 5.35rem);
+    transform:
+      translateX(calc(-50% + var(--bubble-shift)))
+      scale(calc(1 - (var(--depth) - 1) * 0.05));
+  }
+
+  .dialogue-fragment--samantha {
+    --bubble-shift: -3.4rem;
+  }
+
+  .dialogue-fragment--user {
+    --bubble-shift: 3.6rem;
+  }
+
+  .dialogue-fragment--system {
+    --bubble-shift: -2.4rem;
+  }
+}
+
 @media (max-width: 760px) {
-  .brand-stack.is-lifted {
-    transform: translate(-50%, -15.75rem) scale(0.58);
+  .immersive-shell::after,
+  .immersive-frame {
+    inset: 0.7rem;
+    border-radius: 1.35rem;
   }
 
   .dialogue-fragment {
-    width: min(24rem, calc(100vw - 1.5rem));
+    bottom: calc(8.7rem + (var(--depth) - 1) * 4.65rem);
     transform:
-      translateX(-50%)
-      translateY(calc(14.5rem + (var(--depth) - 1) * 4.2rem))
+      translateX(calc(-50% + var(--bubble-shift)))
       scale(calc(1 - (var(--depth) - 1) * 0.08));
   }
 
-  .dialogue-fragment--user,
-  .dialogue-fragment--system,
-  .dialogue-fragment--samantha {
-    left: 50%;
+  .brand-stack__welcome {
+    font-size: 0.74rem;
+  }
+
+  .brand-stack__subtitle {
+    font-size: 0.7rem;
   }
 
   .dialogue-fragment p {
     font-size: 1rem;
-  }
-
-  .signal-orbs {
-    bottom: 8.25rem;
   }
 
   .floating-composer {

@@ -1,24 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import * as THREE from "three";
 
 function lerp(start: number, end: number, amount: number) {
   return start * (1 - amount) + end * amount;
 }
 
-function easeInOutCubic(value: number) {
-  return value < 0.5
-    ? 4 * value * value * value
-    : 1 - Math.pow(-2 * value + 2, 3) / 2;
-}
-
 class TwistedRingCurve extends THREE.Curve<THREE.Vector3> {
   progress: number;
+  voiceMorph: number;
+  voicePhase: number;
 
-  constructor(progress = 0) {
+  constructor(progress = 0, voiceMorph = 0, voicePhase = 0) {
     super();
     this.progress = progress;
+    this.voiceMorph = voiceMorph;
+    this.voicePhase = voicePhase;
   }
 
   override getPoint(t: number, target = new THREE.Vector3()) {
@@ -26,11 +24,18 @@ class TwistedRingCurve extends THREE.Curve<THREE.Vector3> {
     const radius = 3.5;
     const length = lerp(10, radius, this.progress);
     const twistFactor = lerp(Math.PI, 0, this.progress);
+    const circularMorph =
+      this.progress > 0.98
+        ? Math.sin(theta * 5 + this.voicePhase) * this.voiceMorph
+        : 0;
+    const warpedLength = length * (1 + circularMorph * 0.08);
+    const warpedRadius = radius * (1 + circularMorph * 0.14);
 
-    const x = length * Math.cos(theta);
+    const x = warpedLength * Math.cos(theta);
     const twistAngle = twistFactor * Math.cos(theta);
-    const y = radius * Math.sin(theta) * Math.cos(twistAngle);
-    const z = radius * Math.sin(theta) * Math.sin(twistAngle);
+    const loopOffset = warpedRadius * Math.sin(theta);
+    const y = loopOffset * Math.cos(twistAngle);
+    const z = loopOffset * Math.sin(twistAngle);
 
     return target.set(x, y, z);
   }
@@ -38,22 +43,20 @@ class TwistedRingCurve extends THREE.Curve<THREE.Vector3> {
 
 type TopologyRingProps = {
   active: boolean;
-  phase: "idle" | "booting" | "ready";
   mode?: "idle" | "listening" | "speaking";
+  voiceLevelRef: MutableRefObject<number>;
 };
 
 export function TopologyRing({
   active,
-  phase,
   mode = "idle",
+  voiceLevelRef,
 }: TopologyRingProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(active);
-  const phaseRef = useRef(phase);
   const modeRef = useRef(mode);
 
   activeRef.current = active;
-  phaseRef.current = phase;
   modeRef.current = mode;
 
   useEffect(() => {
@@ -99,9 +102,17 @@ export function TopologyRing({
     scene.add(ribbon);
 
     let frameId = 0;
-    let transitionProgress = 0;
-    let collapseStarted = false;
+    let curveProgress = 0;
+    let morphAmount = 0;
+    let morphPhase = 0;
+    let ringScale = 0.34;
+    let ringY = 3.7;
+    let rotationX = 0;
     let targetRotationX = 0;
+    const bootY = 3.7;
+    const readyY = 7.9;
+    const bootScale = 0.34;
+    const readyScale = 0.34;
 
     const resize = () => {
       if (!containerRef.current) {
@@ -119,59 +130,61 @@ export function TopologyRing({
       frameId = window.requestAnimationFrame(animate);
 
       const activeMode = modeRef.current;
-      const currentPhase = phaseRef.current;
-      const intensity =
-        activeMode === "speaking" ? 1.08 : activeMode === "listening" ? 1.04 : 1;
-      const targetY = currentPhase === "ready" ? 7.9 : 3.7;
-      const baseScale = currentPhase === "ready" ? 0.55 : 0.32;
+      const voiceLevel = Math.min(voiceLevelRef.current * 2.25, 1);
+      const targetProgress = activeRef.current ? 1 : 0;
+      const targetY = activeRef.current ? readyY : bootY;
+      const targetScale = activeRef.current ? readyScale : bootScale;
+      const targetMorph =
+        !activeRef.current
+          ? 0
+          : activeMode === "speaking"
+            ? 0.1 + voiceLevel * 0.36
+            : activeMode === "listening"
+              ? 0.055
+              : 0;
 
-      ringMaterial.opacity = 0.95;
-      ringMaterial.color.set(
+      curveProgress = lerp(curveProgress, targetProgress, activeRef.current ? 0.06 : 0.12);
+      morphAmount = lerp(morphAmount, targetMorph, activeMode === "speaking" ? 0.24 : 0.12);
+      morphPhase +=
         activeMode === "speaking"
-          ? 0xfff2e3
+          ? 0.28 + voiceLevel * 0.42
           : activeMode === "listening"
-            ? 0xffead7
-            : 0xffe8d1,
-      );
+            ? 0.08
+            : 0.03;
+      ringY = lerp(ringY, targetY, activeRef.current ? 0.085 : 0.12);
+      ringScale = lerp(ringScale, targetScale, 0.1);
 
       if (!activeRef.current) {
-        ribbon.rotation.x -= 0.04;
-        ribbon.rotation.y = 0;
-        ribbon.rotation.z = 0;
-        ribbon.position.y = lerp(ribbon.position.y, targetY, 0.12);
-        ribbon.scale.setScalar(lerp(ribbon.scale.x, baseScale, 0.12));
+        rotationX -= 0.04;
       } else {
-        if (!collapseStarted) {
-          collapseStarted = true;
-          targetRotationX = Math.round(ribbon.rotation.x / Math.PI) * Math.PI;
-        }
-
-        if (transitionProgress < 1) {
-          transitionProgress = Math.min(1, transitionProgress + 0.0135);
-          const easedProgress = easeInOutCubic(transitionProgress);
-
-          ringGeometry.dispose();
-          ringGeometry = new THREE.TubeGeometry(
-            new TwistedRingCurve(easedProgress),
-            300,
-            0.35,
-            32,
-            true,
-          );
-          ribbon.geometry = ringGeometry;
-
-          ribbon.rotation.x = lerp(ribbon.rotation.x, targetRotationX, 0.1);
-          ribbon.rotation.y = 0;
-          ribbon.rotation.z = 0;
-          ribbon.position.y = lerp(ribbon.position.y, targetY, 0.085);
-          ribbon.scale.setScalar(lerp(ribbon.scale.x, baseScale * intensity, 0.1));
-        } else {
-          ribbon.position.y = targetY;
-          ribbon.rotation.y = 0;
-          ribbon.rotation.z = 0;
-          ribbon.scale.setScalar(baseScale * intensity);
-        }
+        targetRotationX = Math.round(rotationX / Math.PI) * Math.PI;
+        rotationX = lerp(rotationX, targetRotationX, 0.1);
       }
+
+      ringGeometry.dispose();
+      ringGeometry = new THREE.TubeGeometry(
+        new TwistedRingCurve(curveProgress, morphAmount, morphPhase),
+        300,
+        0.35,
+        32,
+        true,
+      );
+      ribbon.geometry = ringGeometry;
+
+      ringMaterial.opacity =
+        activeMode === "speaking"
+          ? 0.93 + voiceLevel * 0.09
+          : activeMode === "listening"
+            ? 0.985
+            : activeRef.current
+              ? 0.96
+              : 0.95;
+      ringMaterial.color.set(0xffe8d1);
+      ribbon.rotation.x = rotationX;
+      ribbon.rotation.y = 0;
+      ribbon.rotation.z = 0;
+      ribbon.position.y = ringY;
+      ribbon.scale.setScalar(ringScale);
 
       renderer.render(scene, camera);
     };
@@ -192,7 +205,7 @@ export function TopologyRing({
         container.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [voiceLevelRef]);
 
   return <div className="topology-ring" ref={containerRef} aria-hidden="true" />;
 }
