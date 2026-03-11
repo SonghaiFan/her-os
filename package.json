@@ -9,9 +9,14 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@google/genai": "^1.44.0",
+    "@tailwindcss/postcss": "^4.2.1",
+    "motion": "^12.35.2",
     "next": "15",
     "react": "19",
     "react-dom": "19",
+    "streamdown": "^2.4.0",
+    "tailwindcss": "^4.2.1",
     "three": "^0.183.2"
   },
   "devDependencies": {

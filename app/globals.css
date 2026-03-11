@@ -1,3 +1,6 @@
+@import "tailwindcss";
+@source "../node_modules/streamdown/dist/*.js";
+
 :root {
   --bg-bright: #ea5e43;
   --bg-main: #9b3728;
@@ -43,57 +46,15 @@ input {
   inset: 0;
   background: radial-gradient(circle at center, rgba(255, 255, 255, 0.04) 0, transparent 42%);
   pointer-events: none;
-  animation: shellGlow 10s ease-in-out infinite alternate;
+  animation: shellGlow 16s ease-in-out infinite alternate;
 }
 
 .immersive-shell::after {
-  content: "";
-  position: absolute;
-  inset: 1.25rem;
-  border-radius: 2rem;
-  border: 1px solid rgba(255, 232, 209, 0.06);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 232, 209, 0.03),
-    0 0 0 1px rgba(255, 232, 209, 0.02);
-  opacity: 0.65;
-  pointer-events: none;
+  content: none;
 }
 
 .immersive-frame {
-  position: absolute;
-  inset: 1.25rem;
-  border-radius: 2rem;
-  pointer-events: none;
-  z-index: 1;
-  overflow: hidden;
-}
-
-.immersive-frame::before,
-.immersive-frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-}
-
-.immersive-frame::before {
-  border: 1px solid rgba(255, 232, 209, 0.12);
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  padding: 0.7rem;
-  opacity: 0.28;
-}
-
-.immersive-frame::after {
-  background:
-    linear-gradient(90deg, transparent 0%, rgba(255, 248, 240, 0.16) 50%, transparent 100%),
-    linear-gradient(180deg, transparent 0%, rgba(255, 240, 228, 0.1) 50%, transparent 100%);
-  mix-blend-mode: screen;
-  opacity: 0.38;
-  transform: translate3d(-18%, -18%, 0);
-  animation: frameSweep 11s linear infinite;
+  display: none;
 }
 
 .topology-ring {
@@ -122,7 +83,7 @@ input {
   top: 57%;
   left: 50%;
   width: 6rem;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) translateY(0.55rem) scale(0.96);
   opacity: 0;
   transition:
     opacity 300ms ease,
@@ -133,7 +94,7 @@ input {
 
 .boot-loader.is-visible {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translate(-50%, -50%) translateY(0) scale(1);
 }
 
 .boot-loader__track {
@@ -169,7 +130,6 @@ input {
   z-index: 2;
   pointer-events: none;
   opacity: 0;
-  animation: brandFloat 8s ease-in-out infinite;
 }
 
 .brand-stack.is-visible {
@@ -230,7 +190,7 @@ input {
     transform 700ms ease;
   pointer-events: none;
   z-index: 2;
-  transform: translateY(0.5rem);
+  transform: translateY(0.85rem);
 }
 
 .dialogue-space.is-live {
@@ -258,7 +218,12 @@ input {
     translateY(calc((var(--depth) - 1) * -0.15rem))
     scale(calc(1 - (var(--depth) - 1) * 0.04));
   transform-origin: center bottom;
-  animation: bubbleDrift 7s ease-in-out infinite;
+  transition:
+    bottom 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 280ms ease,
+    filter 280ms ease;
+  will-change: transform, opacity, filter;
 }
 
 .dialogue-fragment--samantha {
@@ -267,7 +232,6 @@ input {
   box-shadow:
     0 20px 42px rgba(92, 22, 13, 0.1),
     inset 0 0 0 1px rgba(255, 246, 238, 0.24);
-  animation-delay: -1.6s;
 }
 
 .dialogue-fragment--user {
@@ -276,7 +240,6 @@ input {
   box-shadow:
     0 16px 36px rgba(92, 22, 13, 0.08),
     inset 0 0 0 1px rgba(255, 232, 209, 0.16);
-  animation-delay: -0.8s;
 }
 
 .dialogue-fragment--system {
@@ -285,7 +248,6 @@ input {
   box-shadow:
     0 12px 28px rgba(92, 22, 13, 0.05),
     inset 0 0 0 1px rgba(255, 232, 209, 0.1);
-  animation-delay: -2.4s;
 }
 
 .dialogue-fragment__role {
@@ -307,12 +269,36 @@ input {
   color: rgba(255, 232, 209, 0.48);
 }
 
-.dialogue-fragment p {
-  margin: 0;
+.dialogue-fragment__content {
+  color: var(--text-main);
   font-size: clamp(1rem, 3vw, 1.35rem);
   line-height: 1.35;
-  color: var(--text-main);
   text-wrap: balance;
+}
+
+.dialogue-fragment__content :where(p, ul, ol, pre, table, blockquote) {
+  margin: 0.55rem 0 0;
+}
+
+.dialogue-fragment__content > :first-child,
+.dialogue-fragment__content :where(p, ul, ol, pre, table, blockquote):first-child {
+  margin-top: 0;
+}
+
+.dialogue-fragment__content :where(ul, ol) {
+  padding-left: 1.25em;
+}
+
+.dialogue-fragment__content :where(li + li) {
+  margin-top: 0.2rem;
+}
+
+.dialogue-fragment__content :where(code, pre, table, blockquote) {
+  text-wrap: wrap;
+}
+
+.dialogue-fragment__content p {
+  margin: 0;
 }
 
 .floating-composer {
@@ -324,7 +310,7 @@ input {
   align-items: center;
   gap: 0.9rem;
   width: min(100vw - 2rem, 34rem);
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(0.8rem);
   opacity: 0;
   transition:
     opacity 700ms ease,
@@ -341,20 +327,6 @@ input {
   position: relative;
   display: flex;
   align-items: center;
-  padding-inline: 0.2rem;
-}
-
-.floating-composer__field::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255, 232, 209, 0.96), rgba(255, 232, 209, 0.38));
-  box-shadow: 0 0 18px rgba(255, 232, 209, 0.18);
-  animation: composerLine 4s ease-in-out infinite;
 }
 
 .floating-composer__input {
@@ -368,6 +340,13 @@ input {
   text-align: center;
 }
 
+.floating-composer__input:focus-visible,
+.floating-composer__mic:focus-visible,
+.floating-composer__send:focus-visible,
+.immersive-trigger:focus-visible {
+  outline: none;
+}
+
 .floating-composer__input::placeholder {
   color: var(--text-muted);
   letter-spacing: 0.06em;
@@ -379,32 +358,43 @@ input {
   place-items: center;
   border: 0;
   color: var(--text-main);
-  background: rgba(255, 244, 232, 0.12);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 244, 232, 0.1);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 238, 0.14),
+    0 12px 30px rgba(71, 17, 11, 0.08);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
   cursor: pointer;
   transition:
     transform 180ms ease,
     background 180ms ease,
     opacity 180ms ease,
+    color 180ms ease,
     box-shadow 180ms ease;
+  border-radius: 999px;
 }
 
 .floating-composer__mic {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 50%;
+  width: 3.1rem;
+  height: 2.9rem;
 }
 
 .floating-composer__mic.is-active {
-  background: rgba(255, 244, 232, 0.18);
-  box-shadow: 0 0 28px rgba(255, 232, 209, 0.2);
+  color: rgba(255, 244, 232, 1);
+  background: rgba(255, 244, 232, 0.16);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 238, 0.18),
+    0 14px 36px rgba(71, 17, 11, 0.12);
 }
 
 .floating-composer__mic:not(:disabled):hover,
 .floating-composer__send:not(:disabled):hover {
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 10px 20px rgba(92, 22, 13, 0.12);
+  transform: translateY(-1px);
+  color: rgba(255, 244, 232, 0.84);
+  background: rgba(255, 244, 232, 0.14);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 238, 0.16),
+    0 16px 38px rgba(71, 17, 11, 0.12);
 }
 
 .floating-composer__mic svg {
@@ -415,7 +405,6 @@ input {
 .floating-composer__send {
   padding: 0 1rem;
   height: 2.9rem;
-  border-radius: 999px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-size: 0.72rem;
@@ -449,7 +438,7 @@ input {
   transform: translateX(-50%);
   color: var(--accent-soft);
   font-size: 0.78rem;
-  animation: promptPulse 1.8s ease-in-out infinite;
+  animation: promptPulse 2.6s ease-in-out infinite;
 }
 
 @keyframes shellGlow {
@@ -464,16 +453,6 @@ input {
   }
 }
 
-@keyframes frameSweep {
-  from {
-    transform: translate3d(-18%, -18%, 0) rotate(0deg);
-  }
-
-  to {
-    transform: translate3d(18%, 18%, 0) rotate(360deg);
-  }
-}
-
 @keyframes ringCanvasReveal {
   from {
     opacity: 0;
@@ -481,41 +460,6 @@ input {
 
   to {
     opacity: 1;
-  }
-}
-
-@keyframes brandFloat {
-  0%,
-  100% {
-    margin-top: 0;
-  }
-
-  50% {
-    margin-top: -0.3rem;
-  }
-}
-
-@keyframes bubbleDrift {
-  0%,
-  100% {
-    margin-top: 0;
-  }
-
-  50% {
-    margin-top: -0.18rem;
-  }
-}
-
-@keyframes composerLine {
-  0%,
-  100% {
-    opacity: 0.82;
-    transform: scaleX(0.98);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scaleX(1.02);
   }
 }
 
@@ -537,6 +481,7 @@ input {
     bottom: calc(10.1rem + (var(--depth) - 1) * 5.35rem);
     transform:
       translateX(calc(-50% + var(--bubble-shift)))
+      translateY(calc((var(--depth) - 1) * -0.18rem))
       scale(calc(1 - (var(--depth) - 1) * 0.05));
   }
 
@@ -554,16 +499,11 @@ input {
 }
 
 @media (max-width: 760px) {
-  .immersive-shell::after,
-  .immersive-frame {
-    inset: 0.7rem;
-    border-radius: 1.35rem;
-  }
-
   .dialogue-fragment {
     bottom: calc(8.7rem + (var(--depth) - 1) * 4.65rem);
     transform:
       translateX(calc(-50% + var(--bubble-shift)))
+      translateY(calc((var(--depth) - 1) * -0.12rem))
       scale(calc(1 - (var(--depth) - 1) * 0.08));
   }
 
@@ -592,5 +532,46 @@ input {
 
   .immersive-trigger__label {
     bottom: 1.8rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .immersive-shell::before,
+  .topology-ring canvas,
+  .immersive-trigger__label {
+    animation: none;
+  }
+
+  .boot-loader,
+  .brand-stack,
+  .dialogue-space,
+  .dialogue-fragment,
+  .floating-composer,
+  .floating-composer__mic,
+  .floating-composer__send,
+  .topology-ring {
+    transition-duration: 120ms;
+  }
+
+  .boot-loader {
+    transform: translate(-50%, -50%);
+  }
+
+  .brand-stack,
+  .brand-stack.is-visible {
+    transform: translate(-50%, -50%);
+  }
+
+  .floating-composer,
+  .floating-composer.is-live {
+    transform: translateX(-50%);
+  }
+
+  .dialogue-space {
+    transform: none;
+  }
+
+  .dialogue-fragment {
+    filter: none !important;
   }
 }
