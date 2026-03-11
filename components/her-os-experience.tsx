@@ -9,9 +9,7 @@ import {
 } from "react";
 import {
   AnimatePresence,
-  MotionConfig,
   motion,
-  useReducedMotion,
 } from "motion/react";
 import { Streamdown } from "streamdown";
 import { TopologyRing } from "@/components/topology-ring";
@@ -222,7 +220,6 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
   const [isThinking, setIsThinking] = useState(false);
   const [speechAvailable, setSpeechAvailable] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
-  const shouldReduceMotion = useReducedMotion() ?? false;
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -699,7 +696,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
 
     setIsHelloPlaying(false);
     setIsCollapsing(true);
-    await delay(shouldReduceMotion ? 160 : 960);
+    await delay(960);
     setPhase("ready");
   };
 
@@ -730,205 +727,202 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     phase === "booting" ? bootProgress : phase === "ready" || isCollapsing ? 1 : null;
 
   return (
-    <MotionConfig reducedMotion="user">
-      <main className={`immersive-shell immersive-shell--${phase}`}>
-        <TopologyRing
-          active={phase !== "idle"}
-          activationProgress={ringActivationProgress}
-          activationUntwistThreshold={RING_UNTWIST_THRESHOLD}
-          activationMaxSpinSpeed={RING_MAX_SPIN_SPEED}
-          mode={mode}
-          voiceLevelRef={voiceLevelRef}
-          reducedMotion={shouldReduceMotion}
-        />
-        <div className="immersive-frame" aria-hidden="true" />
+    <main className={`immersive-shell immersive-shell--${phase}`}>
+      <TopologyRing
+        active={phase !== "idle"}
+        activationProgress={ringActivationProgress}
+        activationUntwistThreshold={RING_UNTWIST_THRESHOLD}
+        activationMaxSpinSpeed={RING_MAX_SPIN_SPEED}
+        mode={mode}
+        voiceLevelRef={voiceLevelRef}
+      />
+      <div className="immersive-frame" aria-hidden="true" />
 
-        <AnimatePresence initial={false}>
-          {showBootLoader ? (
-            <motion.section
-              key="boot-loader"
-              className="boot-loader is-visible"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: shouldReduceMotion ? 0.14 : 0.24 }}
+      <AnimatePresence initial={false}>
+        {showBootLoader ? (
+          <motion.section
+            key="boot-loader"
+            className="boot-loader is-visible"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.24 }}
+          >
+            <div className="boot-loader__track" aria-hidden="true">
+              <span
+                className="boot-loader__fill"
+                style={{ transform: `scaleX(${Math.max(bootProgress, 0.06)})` }}
+              />
+            </div>
+          </motion.section>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence initial={false}>
+        {phase === "idle" ? (
+          <motion.section
+            key="brand-stack"
+            className="brand-stack is-visible"
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: 1,
+              transition: {
+                duration: 0.42,
+                ease: ENTRANCE_EASE,
+                delayChildren: 0.04,
+                staggerChildren: 0.05,
+              },
+            }}
+            exit={{
+              opacity: 0,
+              transition: {
+                duration: 0.28,
+                ease: EXIT_EASE,
+              },
+            }}
+          >
+            <motion.p
+              className="brand-stack__welcome"
+              initial={{ opacity: 0, filter: "blur(8px)" }}
+              animate={{ opacity: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, filter: "blur(8px)" }}
+              transition={{ duration: 0.3 }}
             >
-              <div className="boot-loader__track" aria-hidden="true">
-                <span
-                  className="boot-loader__fill"
-                  style={{ transform: `scaleX(${Math.max(bootProgress, 0.06)})` }}
-                />
-              </div>
-            </motion.section>
-          ) : null}
-        </AnimatePresence>
+              Welcome to Element Software&apos;s
+            </motion.p>
+            <motion.h1
+              className="brand-stack__title"
+              initial={{ opacity: 0, filter: "blur(12px)" }}
+              animate={{ opacity: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, filter: "blur(10px)" }}
+              transition={{ duration: 0.36 }}
+            >
+              OS<span>1</span>
+            </motion.h1>
+            <motion.p
+              className="brand-stack__subtitle"
+              initial={{ opacity: 0, filter: "blur(8px)" }}
+              animate={{ opacity: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, filter: "blur(8px)" }}
+              transition={{ duration: 0.28 }}
+            >
+              OPERATING SYSTEM
+            </motion.p>
+            {bootError ? (
+              <motion.p
+                className="brand-stack__error"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.22 }}
+              >
+                {bootError}
+              </motion.p>
+            ) : null}
+          </motion.section>
+        ) : null}
+      </AnimatePresence>
 
+      <section
+        className={`dialogue-space ${phase === "ready" && messages.length > 1 ? "is-live" : ""}`}
+        aria-live="polite"
+      >
         <AnimatePresence initial={false}>
-          {phase === "idle" ? (
-            <motion.section
-              key="brand-stack"
-              className="brand-stack is-visible"
-              initial={{ opacity: 0 }}
-              animate={{
-                opacity: 1,
-                transition: {
-                  duration: shouldReduceMotion ? 0.12 : 0.42,
+          {visibleMessages.map((message, index) => {
+            const depth = visibleMessages.length - index;
+
+            return (
+              <motion.article
+                key={message.id}
+                className={`dialogue-fragment dialogue-fragment--${message.role}`}
+                style={
+                  {
+                    "--depth": depth,
+                  } as CSSProperties
+                }
+                initial={{
+                  opacity: 0,
+                  filter: "blur(14px)",
+                }}
+                animate={{
+                  opacity: 1,
+                  filter: "blur(0px)",
+                }}
+                exit={{
+                  opacity: 0,
+                  filter: "blur(10px)",
+                }}
+                transition={{
+                  duration: 0.3,
                   ease: ENTRANCE_EASE,
-                  delayChildren: shouldReduceMotion ? 0 : 0.04,
-                  staggerChildren: shouldReduceMotion ? 0 : 0.05,
-                },
-              }}
-              exit={{
-                opacity: 0,
-                transition: {
-                  duration: shouldReduceMotion ? 0.12 : 0.28,
-                  ease: EXIT_EASE,
-                },
-              }}
-            >
-              <motion.p
-                className="brand-stack__welcome"
-                initial={{ opacity: 0, filter: "blur(8px)" }}
-                animate={{ opacity: 1, filter: "blur(0px)" }}
-                exit={{ opacity: 0, filter: "blur(8px)" }}
-                transition={{ duration: shouldReduceMotion ? 0.1 : 0.3 }}
+                }}
               >
-                Welcome to Element Software&apos;s
-              </motion.p>
-              <motion.h1
-                className="brand-stack__title"
-                initial={{ opacity: 0, filter: "blur(12px)" }}
-                animate={{ opacity: 1, filter: "blur(0px)" }}
-                exit={{ opacity: 0, filter: "blur(10px)" }}
-                transition={{ duration: shouldReduceMotion ? 0.1 : 0.36 }}
-              >
-                OS<span>1</span>
-              </motion.h1>
-              <motion.p
-                className="brand-stack__subtitle"
-                initial={{ opacity: 0, filter: "blur(8px)" }}
-                animate={{ opacity: 1, filter: "blur(0px)" }}
-                exit={{ opacity: 0, filter: "blur(8px)" }}
-                transition={{ duration: shouldReduceMotion ? 0.1 : 0.28 }}
-              >
-                OPERATING SYSTEM
-              </motion.p>
-              {bootError ? (
-                <motion.p
-                  className="brand-stack__error"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: shouldReduceMotion ? 0.1 : 0.22 }}
-                >
-                  {bootError}
-                </motion.p>
-              ) : null}
-            </motion.section>
-          ) : null}
+                <span className="dialogue-fragment__role">
+                  {message.role === "samantha"
+                    ? "Samantha"
+                    : message.role === "user"
+                      ? "You"
+                      : "System"}
+                </span>
+                <div className="dialogue-fragment__content">
+                  <MessageBubbleContent message={message} />
+                </div>
+              </motion.article>
+            );
+          })}
         </AnimatePresence>
+      </section>
 
-        <section
-          className={`dialogue-space ${phase === "ready" && messages.length > 1 ? "is-live" : ""}`}
-          aria-live="polite"
-        >
-          <AnimatePresence initial={false}>
-            {visibleMessages.map((message, index) => {
-              const depth = visibleMessages.length - index;
-
-              return (
-                <motion.article
-                  key={message.id}
-                  className={`dialogue-fragment dialogue-fragment--${message.role}`}
-                  style={
-                    {
-                      "--depth": depth,
-                    } as CSSProperties
-                  }
-                  initial={{
-                    opacity: 0,
-                    filter: shouldReduceMotion ? "none" : "blur(14px)",
-                  }}
-                  animate={{
-                    opacity: 1,
-                    filter: "blur(0px)",
-                  }}
-                  exit={{
-                    opacity: 0,
-                    filter: shouldReduceMotion ? "none" : "blur(10px)",
-                  }}
-                  transition={{
-                    duration: shouldReduceMotion ? 0.12 : 0.3,
-                    ease: ENTRANCE_EASE,
-                  }}
-                >
-                  <span className="dialogue-fragment__role">
-                    {message.role === "samantha"
-                      ? "Samantha"
-                      : message.role === "user"
-                        ? "You"
-                        : "System"}
-                  </span>
-                  <div className="dialogue-fragment__content">
-                    <MessageBubbleContent message={message} />
-                  </div>
-                </motion.article>
-              );
-            })}
-          </AnimatePresence>
-        </section>
-
-        <form
-          className={`floating-composer ${phase === "ready" ? "is-live" : ""}`}
-          onSubmit={(event) => {
-            event.preventDefault();
-            queueResponse(inputValue);
-          }}
-        >
-          <label className="floating-composer__field">
-            <input
-              className="floating-composer__input"
-              type="text"
-              value={inputValue}
-              onChange={(event) => setInputValue(event.target.value)}
-              placeholder={phase === "ready" ? "Say something..." : "Tap anywhere to initialize"}
-              autoComplete="off"
-              disabled={phase !== "ready"}
-            />
-          </label>
-
-          <button
-            type="button"
-            className={`floating-composer__mic ${isListening ? "is-active" : ""}`}
-            onClick={handleToggleMic}
-            disabled={phase !== "ready" || !speechAvailable}
-            aria-label="Toggle microphone"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
-              <path d="M19 11a7 7 0 0 1-14 0" />
-              <path d="M12 18v3" />
-            </svg>
-          </button>
-
-          <button
-            type="submit"
-            className="floating-composer__send"
-            disabled={phase !== "ready" || !inputValue.trim()}
-          >
-            Send
-          </button>
-        </form>
+      <form
+        className={`floating-composer ${phase === "ready" ? "is-live" : ""}`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          queueResponse(inputValue);
+        }}
+      >
+        <label className="floating-composer__field">
+          <input
+            className="floating-composer__input"
+            type="text"
+            value={inputValue}
+            onChange={(event) => setInputValue(event.target.value)}
+            placeholder={phase === "ready" ? "Say something..." : "Tap anywhere to initialize"}
+            autoComplete="off"
+            disabled={phase !== "ready"}
+          />
+        </label>
 
         <button
           type="button"
-          className={`immersive-trigger ${phase === "idle" ? "" : "is-hidden"}`}
-          onClick={handleInitialize}
-          aria-label="Initialize OS1"
+          className={`floating-composer__mic ${isListening ? "is-active" : ""}`}
+          onClick={handleToggleMic}
+          disabled={phase !== "ready" || !speechAvailable}
+          aria-label="Toggle microphone"
         >
-          <span className="immersive-trigger__label">Tap anywhere to initialize</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
+            <path d="M19 11a7 7 0 0 1-14 0" />
+            <path d="M12 18v3" />
+          </svg>
         </button>
-      </main>
-    </MotionConfig>
+
+        <button
+          type="submit"
+          className="floating-composer__send"
+          disabled={phase !== "ready" || !inputValue.trim()}
+        >
+          Send
+        </button>
+      </form>
+
+      <button
+        type="button"
+        className={`immersive-trigger ${phase === "idle" ? "" : "is-hidden"}`}
+        onClick={handleInitialize}
+        aria-label="Initialize OS1"
+      >
+        <span className="immersive-trigger__label">Tap anywhere to initialize</span>
+      </button>
+    </main>
   );
 }

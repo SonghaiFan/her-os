@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 export const runtime = "nodejs";
 
 type TtsRequest = {
@@ -18,6 +21,74 @@ const DEFAULT_QUALITY_PRESET = Number.parseInt(
   10,
 );
 const DEFAULT_SPEED = Number.parseFloat(process.env.NOIZ_SPEED ?? "1");
+const DEV_TTS_OUTPUT_DIR = path.join(process.cwd(), "src", "data", "tts");
+
+function slugifyText(value: string, maxLength = 48) {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength)
+    .replace(/-+$/g, "");
+
+  return slug || "voice";
+}
+
+function getAudioExtension(contentType: string | null, fallback: "mp3" | "wav") {
+  if (contentType?.includes("audio/wav")) {
+    return "wav";
+  }
+
+  if (contentType?.includes("audio/mpeg")) {
+    return "mp3";
+  }
+
+  return fallback;
+}
+
+async function saveDevTtsArtifact(options: {
+  audio: ArrayBuffer;
+  contentType: string | null;
+  duration: string | null;
+  outputFormat: "mp3" | "wav";
+  text: string;
+  timestamp: string | null;
+  voiceId: string;
+}) {
+  if (process.env.NODE_ENV !== "development") {
+    return null;
+  }
+
+  const extension = getAudioExtension(options.contentType, options.outputFormat);
+  const fileTimestamp = options.timestamp ?? String(Date.now());
+  const basename = `${fileTimestamp}-${slugifyText(options.text)}`;
+  const audioFilename = `${basename}.${extension}`;
+  const metaFilename = `${basename}.json`;
+
+  await mkdir(DEV_TTS_OUTPUT_DIR, { recursive: true });
+  await writeFile(
+    path.join(DEV_TTS_OUTPUT_DIR, audioFilename),
+    Buffer.from(options.audio),
+  );
+  await writeFile(
+    path.join(DEV_TTS_OUTPUT_DIR, metaFilename),
+    JSON.stringify(
+      {
+        savedAt: new Date().toISOString(),
+        timestamp: options.timestamp,
+        duration: options.duration,
+        voiceId: options.voiceId,
+        contentType: options.contentType,
+        outputFormat: extension,
+        text: options.text,
+      },
+      null,
+      2,
+    ),
+  );
+
+  return audioFilename;
+}
 
 function normalizeNoizApiKey(value: string) {
   const key = value.trim();
@@ -177,15 +248,25 @@ export async function POST(request: Request) {
 
     const audio = await response.arrayBuffer();
     const headers = new Headers();
+    const contentType = response.headers.get("Content-Type");
     headers.set(
       "Content-Type",
-      response.headers.get("Content-Type") || "audio/mpeg",
+      contentType || "audio/mpeg",
     );
     headers.set("Cache-Control", "no-store");
     headers.set("X-TTS-Provider", "noiz");
 
     const timestamp = response.headers.get("X-Timestamp");
     const duration = response.headers.get("X-Audio-Duration");
+    const savedFilename = await saveDevTtsArtifact({
+      audio,
+      contentType,
+      duration,
+      outputFormat: payload.outputFormat === "wav" ? "wav" : DEFAULT_OUTPUT_FORMAT,
+      text: enhancedText,
+      timestamp,
+      voiceId,
+    });
 
     if (timestamp) {
       headers.set("X-Timestamp", timestamp);
@@ -193,6 +274,10 @@ export async function POST(request: Request) {
 
     if (duration) {
       headers.set("X-Audio-Duration", duration);
+    }
+
+    if (savedFilename) {
+      headers.set("X-TTS-Saved-File", savedFilename);
     }
 
     return new Response(audio, {
