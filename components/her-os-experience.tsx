@@ -22,6 +22,7 @@ type QaEntry = {
 
 type Message = {
   id: string;
+  isStreaming?: boolean;
   role: "system" | "user" | "samantha";
   text: string;
 };
@@ -37,7 +38,10 @@ function MessageBubbleContent({ message }: { message: Message }) {
   }
 
   return (
-    <Streamdown className="dialogue-fragment__markdown" mode="streaming">
+    <Streamdown
+      className="dialogue-fragment__markdown"
+      mode={message.isStreaming ? "streaming" : "static"}
+    >
       {message.text}
     </Streamdown>
   );
@@ -83,14 +87,26 @@ const RING_UNTWIST_THRESHOLD = 0.8;
 const RING_MAX_SPIN_SPEED = 0.2;
 const ENTRANCE_EASE = [0.22, 1, 0.36, 1] as const;
 const EXIT_EASE = [0.4, 0, 1, 1] as const;
+const IS_DEV = process.env.NODE_ENV === "development";
+const DEV_TTS_STORAGE_KEY = "her-os-dev-noiz-tts";
+const DEV_RING_MODE_STORAGE_KEY = "her-os-dev-ring-mode";
 
-function createMessage(role: Message["role"], text: string): Message {
+type RingMode = "idle" | "listening" | "thinking" | "speaking";
+type DevRingMode = "auto" | RingMode;
+
+function createMessage(
+  role: Message["role"],
+  text: string,
+  options?: {
+    isStreaming?: boolean;
+  },
+): Message {
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `${role}-${Date.now()}-${Math.random()}`;
 
-  return { id, role, text };
+  return { id, role, text, isStreaming: options?.isStreaming ?? false };
 }
 
 function toBigrams(input: string) {
@@ -157,6 +173,44 @@ function delay(ms: number) {
   });
 }
 
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function extractSpokenTextFromMarkdown(markdown: string) {
+  const withoutCodeBlocks = markdown.replace(/```[\s\S]*?```/g, " ");
+  const withoutHtmlBlocks = withoutCodeBlocks.replace(/<[^>]+>/g, " ");
+  const withoutImages = withoutHtmlBlocks.replace(/!\[[^\]]*]\([^)]*\)/g, " ");
+  const withoutReferenceImages = withoutImages.replace(/!\[[^\]]*]\[[^\]]*]/g, " ");
+  const withoutLinks = withoutReferenceImages.replace(
+    /\[([^\]]+)]\((?:[^)(]+|\([^)(]*\))*\)/g,
+    "$1",
+  );
+  const withoutReferenceLinks = withoutLinks.replace(/\[([^\]]+)]\[[^\]]*]/g, "$1");
+  const withoutAutoLinks = withoutReferenceLinks.replace(/<https?:\/\/[^>]+>/g, " ");
+  const withoutDefinitions = withoutAutoLinks.replace(/^\s*\[[^\]]+]:\s+\S+.*$/gm, " ");
+  const withoutTables = withoutDefinitions.replace(
+    /^\s*\|.*\|\s*$|^\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+$/gm,
+    " ",
+  );
+  const withoutInlineCode = withoutTables.replace(/`[^`]*`/g, " ");
+  const withoutTaskMarkers = withoutInlineCode.replace(/\[(?: |x|X)]/g, " ");
+  const withoutMdMarkers = withoutTaskMarkers.replace(
+    /^[\t ]{0,3}(?:[#>*-]|\d+\.)\s+/gm,
+    "",
+  );
+  const withoutEmphasis = withoutMdMarkers.replace(/[*_~]+/g, "");
+  const normalized = withoutEmphasis
+    .replace(/[|]/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return normalized;
+}
+
 function logTiming(label: string, startedAt?: number) {
   const timestamp = new Date().toISOString();
   const elapsed =
@@ -220,18 +274,26 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
   const [isThinking, setIsThinking] = useState(false);
   const [speechAvailable, setSpeechAvailable] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [isDevTtsEnabled, setIsDevTtsEnabled] = useState(true);
+  const [devRingMode, setDevRingMode] = useState<DevRingMode>("auto");
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const playbackAnalyserRef = useRef<AnalyserNode | null>(null);
+  const playbackSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const microphoneAnalyserRef = useRef<AnalyserNode | null>(null);
+  const microphoneSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
   const voiceFrameRef = useRef<number | null>(null);
+  const voiceTrackingSessionRef = useRef(0);
   const voiceLevelRef = useRef(0);
   const shouldResumeRecognitionRef = useRef(false);
   const queuedResponsesRef = useRef(Promise.resolve());
   const hasShownSpeechFallbackRef = useRef(false);
   const isListeningRef = useRef(false);
+  const startMicrophoneVoiceTrackingRef = useRef<() => Promise<void>>(async () => {});
+  const stopVoiceTrackingRef = useRef<() => void>(() => {});
   const conversationTurnsRef = useRef<ConversationTurn[]>([]);
   const queueResponseRef = useRef<(question: string) => void>(() => {});
 
@@ -239,8 +301,45 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     isListeningRef.current = isListening;
   }, [isListening]);
 
-  const appendMessage = (role: Message["role"], text: string) => {
-    const message = createMessage(role, text);
+  useEffect(() => {
+    if (!IS_DEV) {
+      return;
+    }
+
+    try {
+      const storedValue = window.localStorage.getItem(DEV_TTS_STORAGE_KEY);
+      setIsDevTtsEnabled(storedValue !== "off");
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!IS_DEV) {
+      return;
+    }
+
+    try {
+      const storedValue = window.localStorage.getItem(DEV_RING_MODE_STORAGE_KEY);
+
+      if (
+        storedValue === "auto" ||
+        storedValue === "idle" ||
+        storedValue === "listening" ||
+        storedValue === "thinking" ||
+        storedValue === "speaking"
+      ) {
+        setDevRingMode(storedValue);
+      }
+    } catch {}
+  }, []);
+
+  const appendMessage = (
+    role: Message["role"],
+    text: string,
+    options?: {
+      isStreaming?: boolean;
+    },
+  ) => {
+    const message = createMessage(role, text, options);
 
     startTransition(() => {
       setMessages((current) => [...current.slice(-4), message]);
@@ -268,6 +367,16 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     });
   };
 
+  const setMessageStreaming = (id: string, isStreaming: boolean) => {
+    startTransition(() => {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === id ? { ...message, isStreaming } : message,
+        ),
+      );
+    });
+  };
+
   const resumeRecognition = () => {
     if (!shouldResumeRecognitionRef.current || !recognitionRef.current) {
       return;
@@ -282,21 +391,46 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     }
   };
 
-  const stopVoiceTracking = () => {
+  const clearVoiceTrackingResources = () => {
     if (voiceFrameRef.current !== null) {
       window.cancelAnimationFrame(voiceFrameRef.current);
       voiceFrameRef.current = null;
     }
 
-    if (mediaSourceRef.current) {
-      mediaSourceRef.current.disconnect();
-      mediaSourceRef.current = null;
+    if (playbackSourceRef.current) {
+      playbackSourceRef.current.disconnect();
+      playbackSourceRef.current = null;
+    }
+
+    if (microphoneSourceRef.current) {
+      microphoneSourceRef.current.disconnect();
+      microphoneSourceRef.current = null;
+    }
+
+    if (microphoneStreamRef.current) {
+      for (const track of microphoneStreamRef.current.getTracks()) {
+        track.stop();
+      }
+
+      microphoneStreamRef.current = null;
     }
 
     voiceLevelRef.current = 0;
   };
 
-  const startVoiceTracking = async (audio: HTMLAudioElement) => {
+  const stopVoiceTracking = () => {
+    voiceTrackingSessionRef.current += 1;
+    clearVoiceTrackingResources();
+  };
+  stopVoiceTrackingRef.current = stopVoiceTracking;
+
+  const beginVoiceTrackingSession = () => {
+    voiceTrackingSessionRef.current += 1;
+    clearVoiceTrackingResources();
+    return voiceTrackingSessionRef.current;
+  };
+
+  const ensureAudioContext = async () => {
     const AudioContextCtor =
       window.AudioContext ??
       ("webkitAudioContext" in window
@@ -304,8 +438,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
         : undefined);
 
     if (!AudioContextCtor) {
-      voiceLevelRef.current = 0;
-      return;
+      return null;
     }
 
     if (!audioContextRef.current) {
@@ -318,29 +451,22 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
       await context.resume();
     }
 
-    if (!analyserRef.current) {
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.82;
-      analyser.connect(context.destination);
-      analyserRef.current = analyser;
-    }
+    return context;
+  };
 
-    stopVoiceTracking();
-
-    const analyser = analyserRef.current;
-
-    if (!analyser) {
-      return;
-    }
-
-    const source = context.createMediaElementSource(audio);
-    source.connect(analyser);
-    mediaSourceRef.current = source;
-
+  const startVoiceLevelLoop = (
+    analyser: AnalyserNode,
+    sessionId: number,
+    gain: number,
+    noiseFloor: number,
+  ) => {
     const samples = new Uint8Array(analyser.frequencyBinCount);
 
     const tick = () => {
+      if (voiceTrackingSessionRef.current !== sessionId) {
+        return;
+      }
+
       analyser.getByteTimeDomainData(samples);
 
       let total = 0;
@@ -351,12 +477,106 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
       }
 
       const rms = Math.sqrt(total / samples.length);
-      voiceLevelRef.current = voiceLevelRef.current * 0.7 + rms * 0.3;
+      const gatedLevel = clamp01(Math.max(0, rms - noiseFloor) * gain);
+      const expressiveLevel = Math.pow(gatedLevel, 0.82);
+      voiceLevelRef.current = voiceLevelRef.current * 0.56 + expressiveLevel * 0.44;
       voiceFrameRef.current = window.requestAnimationFrame(tick);
     };
 
     tick();
   };
+
+  const startPlaybackVoiceTracking = async (audio: HTMLAudioElement) => {
+    const sessionId = beginVoiceTrackingSession();
+    const context = await ensureAudioContext();
+
+    if (!context || voiceTrackingSessionRef.current !== sessionId) {
+      return;
+    }
+
+    if (!playbackAnalyserRef.current) {
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.78;
+      analyser.connect(context.destination);
+      playbackAnalyserRef.current = analyser;
+    }
+
+    const analyser = playbackAnalyserRef.current;
+
+    if (!analyser) {
+      return;
+    }
+
+    const source = context.createMediaElementSource(audio);
+    source.connect(analyser);
+    playbackSourceRef.current = source;
+    startVoiceLevelLoop(analyser, sessionId, 7.2, 0.008);
+  };
+
+  const startMicrophoneVoiceTracking = async () => {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      voiceLevelRef.current = 0;
+      return;
+    }
+
+    const sessionId = beginVoiceTrackingSession();
+    const context = await ensureAudioContext();
+
+    if (!context || voiceTrackingSessionRef.current !== sessionId) {
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      if (voiceTrackingSessionRef.current !== sessionId) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+
+        return;
+      }
+
+      if (!microphoneAnalyserRef.current) {
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.68;
+        microphoneAnalyserRef.current = analyser;
+      }
+
+      const analyser = microphoneAnalyserRef.current;
+
+      if (!analyser) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+
+        return;
+      }
+
+      const source = context.createMediaStreamSource(stream);
+      source.connect(analyser);
+      microphoneStreamRef.current = stream;
+      microphoneSourceRef.current = source;
+      startVoiceLevelLoop(analyser, sessionId, 7.4, 0.009);
+    } catch {
+      if (voiceTrackingSessionRef.current === sessionId) {
+        voiceLevelRef.current = 0;
+      }
+    }
+  };
+  startMicrophoneVoiceTrackingRef.current = startMicrophoneVoiceTracking;
 
   const playAudio = async (
     src: string,
@@ -378,7 +598,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     audio.preload = "auto";
     audioRef.current = audio;
     setIsSpeaking(true);
-    await startVoiceTracking(audio);
+    await startPlaybackVoiceTracking(audio);
 
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -461,12 +681,19 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
   };
 
   const speakText = async (text: string) => {
-    if (!text.trim()) {
+    const spokenText = extractSpokenTextFromMarkdown(text);
+
+    if (!spokenText) {
+      return;
+    }
+
+    if (IS_DEV && !isDevTtsEnabled) {
+      await speakTextWithBrowser(spokenText);
       return;
     }
 
     try {
-      const audioBlob = await fetchTtsAudio(text);
+      const audioBlob = await fetchTtsAudio(spokenText);
       const audioUrl = URL.createObjectURL(audioBlob);
 
       try {
@@ -476,7 +703,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
         URL.revokeObjectURL(audioUrl);
       }
     } catch {
-      await speakTextWithBrowser(text);
+      await speakTextWithBrowser(spokenText);
     }
   };
 
@@ -534,7 +761,9 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
       const history = appendConversationTurn({ role: "user", text: trimmed });
 
       await delay(THINKING_DELAY_MS);
-      const assistantMessage = appendMessage("samantha", "");
+      const assistantMessage = appendMessage("samantha", "", {
+        isStreaming: true,
+      });
       let receivedFirstToken = false;
       const requestStartedAt = performance.now();
 
@@ -562,6 +791,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
         }
 
         updateMessage(assistantMessage.id, reply);
+        setMessageStreaming(assistantMessage.id, false);
         appendConversationTurn({ role: "samantha", text: reply });
         logTiming("speech:start", requestStartedAt);
         await speakText(reply);
@@ -574,12 +804,14 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
 
         if (bestMatch) {
           updateMessage(assistantMessage.id, bestMatch.a);
+          setMessageStreaming(assistantMessage.id, false);
           appendConversationTurn({ role: "samantha", text: bestMatch.a });
           await playAudio(`/audio/samantha/${bestMatch.f}.ogg`);
           return;
         }
 
         updateMessage(assistantMessage.id, "I don't know.");
+        setMessageStreaming(assistantMessage.id, false);
         appendConversationTurn({ role: "samantha", text: "I don't know." });
         await speakText("I don't know.");
       }
@@ -603,14 +835,17 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
 
     recognition.onstart = () => {
       setIsListening(true);
+      void startMicrophoneVoiceTrackingRef.current();
     };
 
     recognition.onend = () => {
       setIsListening(false);
+      stopVoiceTrackingRef.current();
     };
 
     recognition.onerror = () => {
       setIsListening(false);
+      stopVoiceTrackingRef.current();
     };
 
     recognition.onresult = (event) => {
@@ -654,7 +889,7 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
         window.speechSynthesis.cancel();
       }
 
-      stopVoiceTracking();
+      stopVoiceTrackingRef.current();
     };
   }, []);
 
@@ -714,13 +949,14 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
     } catch {}
   };
 
-  const mode = isSpeaking
+  const autoMode: RingMode = isSpeaking
     ? "speaking"
     : isThinking
       ? "thinking"
       : isListening
         ? "listening"
         : "idle";
+  const mode = IS_DEV && devRingMode !== "auto" ? devRingMode : autoMode;
   const visibleMessages = messages.slice(-3);
   const showBootLoader = phase === "booting" && isHelloPlaying;
   const ringActivationProgress =
@@ -728,6 +964,61 @@ export function HerOsExperience({ qas }: { qas: QaEntry[] }) {
 
   return (
     <main className={`immersive-shell immersive-shell--${phase}`}>
+      {IS_DEV ? (
+        <section className="dev-panel" aria-label="Development controls">
+          <div className="dev-panel__eyebrow">Debug</div>
+          <label className="dev-panel__toggle">
+            <input
+              type="checkbox"
+              checked={isDevTtsEnabled}
+              onChange={(event) => {
+                const nextValue = event.target.checked;
+                setIsDevTtsEnabled(nextValue);
+
+                try {
+                  window.localStorage.setItem(
+                    DEV_TTS_STORAGE_KEY,
+                    nextValue ? "on" : "off",
+                  );
+                } catch {}
+              }}
+            />
+            <span>Noiz TTS</span>
+          </label>
+          <p className="dev-panel__hint">
+            {isDevTtsEnabled
+              ? "Cloud voice on."
+              : "Cloud voice off. Browser speech only."}
+          </p>
+          <div className="dev-panel__eyebrow">Ring</div>
+          <div className="dev-panel__segmented" role="group" aria-label="Ring state">
+            {(
+              ["auto", "idle", "listening", "thinking", "speaking"] as const
+            ).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`dev-panel__chip ${devRingMode === option ? "is-active" : ""}`}
+                onClick={() => {
+                  setDevRingMode(option);
+
+                  try {
+                    window.localStorage.setItem(DEV_RING_MODE_STORAGE_KEY, option);
+                  } catch {}
+                }}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <p className="dev-panel__hint">
+            {devRingMode === "auto"
+              ? `Following live state: ${autoMode}.`
+              : `Forced ring state: ${devRingMode}.`}
+          </p>
+        </section>
+      ) : null}
+
       <TopologyRing
         active={phase !== "idle"}
         activationProgress={ringActivationProgress}

@@ -141,6 +141,8 @@ export function TopologyRing({
     let ringScale = 0.34;
     let ringY = 2.4;
     let rotationX = 0;
+    let rotationY = 0;
+    let rotationZ = 0;
     let targetRotationX = 0;
     let activationStartedAt: number | null = null;
     let wasActive = activeRef.current;
@@ -217,7 +219,8 @@ export function TopologyRing({
 
       const activeMode = modeRef.current;
       const isThinking = activeMode === "thinking";
-      const voiceLevel = Math.min(voiceLevelRef.current * 2.25, 1);
+      const isListening = activeMode === "listening";
+      const isSpeaking = activeMode === "speaking";
       const untwistThreshold = clamp01(activationUntwistThresholdRef.current);
       const maxSpinSpeed = Math.max(activationMaxSpinSpeedRef.current, 0.001);
       const activationLinearProgress =
@@ -232,6 +235,18 @@ export function TopologyRing({
         activeRef.current &&
         activationLinearProgress < 1 &&
         (hasExternalActivationProgress || activationStartedAt !== null);
+      const voiceReactive = activeRef.current && !isActivating && !isThinking;
+      const voiceLevel = clamp01(
+        voiceLevelRef.current * (isSpeaking ? 4.8 : isListening ? 2.4 : 2.25),
+      );
+      const voiceEnergy = Math.pow(voiceLevel, isSpeaking ? 0.7 : 0.96);
+      const voiceWave = Math.sin(morphPhase * 0.32 + now * 0.0024) * voiceEnergy;
+      const voicePulse =
+        voiceReactive && isSpeaking
+          ? 0.038 + voiceEnergy * 0.19
+          : voiceReactive && isListening
+            ? 0.008 + voiceEnergy * 0.045
+            : 0;
       const untwistStart = Math.min(untwistThreshold * 0.42, 0.72);
       const untwistSpan = Math.max(1 - untwistStart, 0.001);
       const activationSpinRamp = easeInCubic(
@@ -253,12 +268,19 @@ export function TopologyRing({
             : 1;
       const baseY = activeRef.current ? readyY : bootY;
       const twistOffset = (1 - curveProgress) * twistYOffset;
-      const targetY = baseY - twistOffset;
+      const targetY =
+        baseY -
+        twistOffset +
+        (voiceReactive && isSpeaking
+          ? -0.2 + voiceWave * 1.46
+          : voiceReactive && isListening
+            ? -0.03 + voiceWave * 0.36
+            : 0);
       const targetScale = !activeRef.current
         ? bootScale
         : isActivating
           ? lerp(bootScale, readyScale, easeOutCubic(activationLinearProgress))
-          : readyScale;
+          : readyScale + voicePulse;
       const targetMorph =
         !activeRef.current
           ? 0
@@ -270,10 +292,10 @@ export function TopologyRing({
               )
             : isThinking
               ? 0.028
-              : activeMode === "speaking"
-                ? 0.1 + voiceLevel * 0.36
-                : activeMode === "listening"
-                  ? 0.055
+              : voiceReactive && isSpeaking
+                ? 0.18 + voiceEnergy * 0.72
+                : voiceReactive && isListening
+                  ? 0.052 + voiceEnergy * 0.16
                   : 0;
 
       curveProgress = lerp(
@@ -286,8 +308,10 @@ export function TopologyRing({
         targetMorph,
         isActivating
           ? 0.18
-          : activeMode === "speaking"
-            ? 0.24
+          : voiceReactive && isSpeaking
+            ? 0.34
+            : voiceReactive && isListening
+              ? 0.16
             : isThinking
               ? 0.16
               : 0.12,
@@ -301,13 +325,17 @@ export function TopologyRing({
             )
           : isThinking
             ? 0.11
-            : activeMode === "speaking"
-                ? 0.28 + voiceLevel * 0.42
-                : activeMode === "listening"
-                  ? 0.08
+            : voiceReactive && isSpeaking
+                ? 0.42 + voiceEnergy * 1.08
+                : voiceReactive && isListening
+                  ? 0.09 + voiceEnergy * 0.14
                   : 0.03;
       ringY = lerp(ringY, targetY, activeRef.current ? 0.085 : 0.12);
-      ringScale = lerp(ringScale, targetScale, 0.1);
+      ringScale = lerp(
+        ringScale,
+        targetScale,
+        voiceReactive && isSpeaking ? 0.2 : voiceReactive && isListening ? 0.1 : 0.1,
+      );
 
       if (!activeRef.current) {
         rotationX -= 0.04;
@@ -324,22 +352,49 @@ export function TopologyRing({
         rotationX = lerp(rotationX, targetRotationX, 0.1);
       }
 
+      rotationY = lerp(
+        rotationY,
+        voiceReactive && isSpeaking
+          ? voiceWave * 0.42 + Math.sin(morphPhase * 0.11) * 0.08 * voiceEnergy
+          : voiceReactive && isListening
+            ? voiceWave * 0.08
+            : 0,
+        voiceReactive && isSpeaking ? 0.18 : 0.12,
+      );
+      rotationZ = lerp(
+        rotationZ,
+        voiceReactive && isSpeaking
+          ? Math.sin(morphPhase * 0.2) * 0.22 * voiceEnergy
+          : voiceReactive && isListening
+            ? Math.sin(morphPhase * 0.16) * 0.03 * voiceEnergy
+            : 0,
+        voiceReactive && isSpeaking ? 0.16 : 0.1,
+      );
+
       rebuildGeometry();
 
       ringMaterial.opacity =
-        activeMode === "speaking"
-          ? 0.93 + voiceLevel * 0.09
+        voiceReactive && isSpeaking
+          ? 0.94 + voiceEnergy * 0.11
           : isThinking
             ? 0.975
-          : activeMode === "listening"
-            ? 0.985
+          : voiceReactive && isListening
+            ? 0.96 + voiceEnergy * 0.04
             : activeRef.current
               ? 0.96
               : 0.95;
-      ringMaterial.color.set(isThinking ? 0xfff1df : 0xffe8d1);
+      ringMaterial.color.set(
+        voiceReactive && isSpeaking
+          ? 0xfff4e8
+          : voiceReactive && isListening
+            ? 0xffeedc
+            : isThinking
+              ? 0xfff1df
+              : 0xffe8d1,
+      );
       ribbon.rotation.x = rotationX;
-      ribbon.rotation.y = 0;
-      ribbon.rotation.z = 0;
+      ribbon.rotation.y = rotationY;
+      ribbon.rotation.z = rotationZ;
       ribbon.position.y = ringY;
       ribbon.scale.setScalar(ringScale);
 
