@@ -110,12 +110,18 @@ input {
 }
 
 .dev-panel__chip {
+  --chip-bg: rgba(255, 242, 229, 0.1);
+  --chip-border: rgba(255, 246, 238, 0.12);
+  --chip-color: var(--text-main);
+  --chip-shadow: none;
   border: 0;
   padding: 0.38rem 0.62rem;
   border-radius: 999px;
-  color: var(--text-main);
-  background: rgba(255, 242, 229, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 246, 238, 0.12);
+  color: var(--chip-color);
+  background: var(--chip-bg);
+  box-shadow:
+    var(--chip-shadow),
+    inset 0 0 0 1px var(--chip-border);
   cursor: pointer;
   font-size: 0.72rem;
   letter-spacing: 0.04em;
@@ -128,16 +134,15 @@ input {
 }
 
 .dev-panel__chip:hover {
+  --chip-bg: rgba(255, 242, 229, 0.14);
   transform: translateY(-1px);
-  background: rgba(255, 242, 229, 0.14);
 }
 
 .dev-panel__chip.is-active {
-  color: #7a271c;
-  background: rgba(255, 232, 209, 0.96);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 246, 238, 0.2),
-    0 10px 22px rgba(71, 17, 11, 0.12);
+  --chip-bg: rgba(255, 232, 209, 0.96);
+  --chip-border: rgba(255, 246, 238, 0.2);
+  --chip-color: #7a271c;
+  --chip-shadow: 0 10px 22px rgba(71, 17, 11, 0.12);
 }
 
 .topology-ring {
@@ -282,19 +287,23 @@ input {
 }
 
 .dialogue-fragment {
+  --bubble-shift: 0rem;
+  --fragment-fill: rgba(255, 232, 209, 0.14);
+  --fragment-border: rgba(255, 246, 238, 0.18);
+  --fragment-shadow: 0 18px 40px rgba(92, 22, 13, 0.08);
+  --fragment-role: var(--text-faint);
   position: absolute;
   left: 50%;
   bottom: calc(9.4rem + (var(--depth) - 1) * 5rem);
-  --bubble-shift: 0rem;
   width: min(24rem, calc(100vw - 1.5rem));
   padding: 0.85rem 1rem;
   border-radius: 1.4rem;
-  background: rgba(255, 232, 209, 0.14);
+  background: var(--fragment-fill);
   backdrop-filter: blur(24px) saturate(120%);
   -webkit-backdrop-filter: blur(24px) saturate(120%);
   box-shadow:
-    0 18px 40px rgba(92, 22, 13, 0.08),
-    inset 0 0 0 1px rgba(255, 246, 238, 0.18);
+    var(--fragment-shadow),
+    inset 0 0 0 1px var(--fragment-border);
   opacity: calc(1 - (var(--depth) - 1) * 0.18);
   transform:
     translateX(calc(-50% + var(--bubble-shift)))
@@ -311,45 +320,33 @@ input {
 
 .dialogue-fragment--samantha {
   --bubble-shift: -1.1rem;
-  background: rgba(255, 239, 227, 0.2);
-  box-shadow:
-    0 20px 42px rgba(92, 22, 13, 0.1),
-    inset 0 0 0 1px rgba(255, 246, 238, 0.24);
+  --fragment-fill: rgba(255, 239, 227, 0.2);
+  --fragment-border: rgba(255, 246, 238, 0.24);
+  --fragment-shadow: 0 20px 42px rgba(92, 22, 13, 0.1);
+  --fragment-role: rgba(255, 248, 240, 0.76);
 }
 
 .dialogue-fragment--user {
   --bubble-shift: 1.15rem;
-  background: rgba(255, 208, 180, 0.12);
-  box-shadow:
-    0 16px 36px rgba(92, 22, 13, 0.08),
-    inset 0 0 0 1px rgba(255, 232, 209, 0.16);
+  --fragment-fill: rgba(255, 208, 180, 0.12);
+  --fragment-border: rgba(255, 232, 209, 0.16);
+  --fragment-shadow: 0 16px 36px rgba(92, 22, 13, 0.08);
+  --fragment-role: rgba(255, 228, 204, 0.64);
 }
 
 .dialogue-fragment--system {
   --bubble-shift: -0.7rem;
-  background: rgba(255, 232, 209, 0.08);
-  box-shadow:
-    0 12px 28px rgba(92, 22, 13, 0.05),
-    inset 0 0 0 1px rgba(255, 232, 209, 0.1);
+  --fragment-fill: rgba(255, 232, 209, 0.08);
+  --fragment-border: rgba(255, 232, 209, 0.1);
+  --fragment-shadow: 0 12px 28px rgba(92, 22, 13, 0.05);
+  --fragment-role: rgba(255, 232, 209, 0.48);
 }
 
 .dialogue-fragment__role {
   display: block;
   margin-bottom: 0.45rem;
-  color: var(--text-faint);
+  color: var(--fragment-role);
   font-size: 0.62rem;
-}
-
-.dialogue-fragment--samantha .dialogue-fragment__role {
-  color: rgba(255, 248, 240, 0.76);
-}
-
-.dialogue-fragment--user .dialogue-fragment__role {
-  color: rgba(255, 228, 204, 0.64);
-}
-
-.dialogue-fragment--system .dialogue-fragment__role {
-  color: rgba(255, 232, 209, 0.48);
 }
 
 .dialogue-fragment__content {
@@ -437,14 +434,18 @@ input {
 
 .floating-composer__mic,
 .floating-composer__send {
+  --control-fill: rgba(255, 244, 232, 0.1);
+  --control-border: rgba(255, 246, 238, 0.14);
+  --control-shadow: 0 12px 30px rgba(71, 17, 11, 0.08);
+  --control-color: var(--text-main);
   display: grid;
   place-items: center;
   border: 0;
-  color: var(--text-main);
-  background: rgba(255, 244, 232, 0.1);
+  color: var(--control-color);
+  background: var(--control-fill);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 246, 238, 0.14),
-    0 12px 30px rgba(71, 17, 11, 0.08);
+    inset 0 0 0 1px var(--control-border),
+    var(--control-shadow);
   backdrop-filter: blur(18px) saturate(125%);
   -webkit-backdrop-filter: blur(18px) saturate(125%);
   cursor: pointer;
@@ -463,21 +464,19 @@ input {
 }
 
 .floating-composer__mic.is-active {
-  color: rgba(255, 244, 232, 1);
-  background: rgba(255, 244, 232, 0.16);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 246, 238, 0.18),
-    0 14px 36px rgba(71, 17, 11, 0.12);
+  --control-fill: rgba(255, 244, 232, 0.16);
+  --control-border: rgba(255, 246, 238, 0.18);
+  --control-shadow: 0 14px 36px rgba(71, 17, 11, 0.12);
+  --control-color: rgba(255, 244, 232, 1);
 }
 
 .floating-composer__mic:not(:disabled):hover,
 .floating-composer__send:not(:disabled):hover {
+  --control-fill: rgba(255, 244, 232, 0.14);
+  --control-border: rgba(255, 246, 238, 0.16);
+  --control-shadow: 0 16px 38px rgba(71, 17, 11, 0.12);
+  --control-color: rgba(255, 244, 232, 0.84);
   transform: translateY(-1px);
-  color: rgba(255, 244, 232, 0.84);
-  background: rgba(255, 244, 232, 0.14);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 246, 238, 0.16),
-    0 16px 38px rgba(71, 17, 11, 0.12);
 }
 
 .floating-composer__mic svg {
